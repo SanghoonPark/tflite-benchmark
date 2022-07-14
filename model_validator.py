@@ -1,15 +1,13 @@
 """
-Benchmark via comparing output tensors
-
-Parameters
-----------
+tflite-benchmark
+-------------------
+Measuring latency, accuracy, compatibilites of target runtime for given tflite models
+by comparing output tensors inferenced by both; reference(host PC) and target.
 """
 from __future__ import print_function
-from logging import raiseExceptions
-
-import sys
 import os
-import subprocess, shlex
+import subprocess
+import shlex
 import re
 import argparse
 import numpy as np
@@ -25,12 +23,23 @@ GLOBAL_SETTING = {
 
 
 def convert_to_list(x):
+    """Upcasting single object to list"""
     if not isinstance(x, list):
         x = [x]
     return x
 
 
 def run_tflite_on_host(tflite_file, inputs):
+    """Actual processing of tflite model inference on Host device.
+
+    Args:
+        tflite_file (string): path to tflite model
+        inputs (list of numpy objects): raw inputs to be transformed to input tensors.
+        use_target (str, optional): Defaults to '--use_npu=true'.
+
+    Returns:
+        outputs : numpy object lists containing data of output tensors.
+    """
     with open(tflite_file, 'rb') as f:
         model_buf = f.read()
     inputs = convert_to_list(inputs)
@@ -58,7 +67,17 @@ def run_tflite_on_host(tflite_file, inputs):
     return outputs
 
 
-def run_tflite_on_heaan(tflite_file, inputs, use_target='--use_npu=true'):
+def run_tflite_on_heaan(tflite_file, inputs):
+    """Actual processing of tflite model inference on HEaaN framework.
+
+    Args:
+        tflite_file (string): path to tflite model
+        inputs (list of numpy objects): raw inputs to be transformed to input tensors.
+        use_target (str, optional): Defaults to '--use_npu=true'.
+
+    Returns:
+        outputs : numpy object lists containing data of output tensors.
+    """    
     with open(tflite_file, 'rb') as f:
         model_buf = f.read()
     inputs = convert_to_list(inputs)
@@ -77,6 +96,16 @@ def run_tflite_on_heaan(tflite_file, inputs, use_target='--use_npu=true'):
 
 
 def run_tflite_on_android(tflite_file, inputs, use_target='--use_npu=true'):
+    """Actual processing of tflite model inference on Android target.
+
+    Args:
+        tflite_file (string): path to tflite model
+        inputs (list of numpy objects): raw inputs to be transformed to input tensors.
+        use_target (str, optional): Defaults to '--use_npu=true'.
+
+    Returns:
+        outputs : numpy object lists containing data of output tensors.
+    """
     with open(tflite_file, 'rb') as f:
         model_buf = f.read()
     inputs = convert_to_list(inputs)
@@ -143,6 +172,10 @@ def run_tflite_on_android(tflite_file, inputs, use_target='--use_npu=true'):
 
 
 def probe_adb_device():
+    """For android targets, make sure if ADB is supported and the target is connected to Host PC.
+    Returns:
+        dev_id : unique device ID granted by ADB runtime.
+    """
     try:
         log = subprocess.check_output(
                 shlex.split('adb devices'),
@@ -202,7 +235,8 @@ def compare_output(from_host, from_target, metric='Strict', k=0):
             np.testing.assert_almost_equal(np.sort(topk_host), np.sort(topk_targ))
 
 
-class model_validator:
+class ModelValidator:
+    """Decorator for tflite model validation"""
     def __init__(self, f):
         self.inner_f = f
         if GLOBAL_SETTING['target'] == 'android':
@@ -229,163 +263,153 @@ class model_validator:
         print("###### test result : Pass #####")
 
 
-"""
-Add test cases each per a single tflite model here with @model_validator
-"""
 class TestRecipes:
+    """Add test case each per a single tflite mode here with @ModelValidator"""
     def __init__(self):
         return
 
-    @model_validator
+    @ModelValidator
     def do_dummy(self):
-        # Responsible to return the **tuple** in that
-        # - **tflite file path**
-        # - **inputs** composed of numpy arrays for the given operation.
-        # must be given by the author.
+        """
+        Responsible to return the **tuple** in that
+        - **tflite file path**
+        - **inputs** composed of numpy arrays for the given operation.
+        must be given by the author.
+        Returns:
+            file_path : directory to tflite model file.
+            inputs object : can be both a list of numpy objects or a single numpy object.
+        """
         input_a = np.random.uniform(size=(2, 2)).astype('float32')
         input_b = np.random.uniform(size=(2, 2)).astype('float32')
-        # inputs can be both a list of numpy objects or a single numpy object.
-        return os.path.join(os.path.dirname(__file__), 'models/', 'add_fp16.tflite'), [input_a, input_b]
+        file_path = os.path.join(os.path.dirname(__file__), 'models/', 'add_fp16.tflite')
+        inputs = [input_a, input_b]
+        return file_path, inputs
 
-    @model_validator
+    @ModelValidator
     def do_mul(self):
+        """model containing tf.mul node only"""
         input_a = np.random.uniform(size=(2, 2), low=0, high=10).astype('int8')
         input_b = np.random.uniform(size=(2, 2), low=0, high=10).astype('int8')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'mul_int8.tflite'), [input_a, input_b]
+        file_path = os.path.join(os.path.dirname(__file__), 'models/', 'mul_int8.tflite')
+        return file_path, [input_a, input_b]
 
-    @model_validator
+    @ModelValidator
     def do_argmax(self):
+        """model containing tf.argmax node only"""
         inputs = np.random.uniform(size=(1, 720, 1080, 3)).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'argmax.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_relu(self):
+        """model containing tf.relu node only"""
         inputs = np.random.uniform(size=(32), low=-1., high=1.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'relu.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_relu6(self):
+        """model containing tf.relu6 node only"""
         inputs = np.random.uniform(size=(32), low=-1., high=1.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'relu6.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_elu(self):
+        """Elu"""
         inputs = np.random.uniform(size=(32), low=-1., high=1.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'elu.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_prelu(self):
+        """Prelu"""
         inputs = np.random.uniform(size=(32), low=-1., high=1.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'prelu.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_tanh(self):
+        """Tanh"""
         inputs = np.random.uniform(size=(32), low=-1., high=1.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'tanh.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_dense(self):
+        """Dense"""
         inputs = np.random.uniform(size=(32), low=-3., high=3.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'dense.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_depthwiseconv2d(self):
+        """DepthwiseConv2D"""
         inputs = np.random.uniform(size=(1, 32, 32, 32), low=-3., high=3.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'depthwise_conv2d.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_transpose(self):
+        """Transpose"""
         inputs = np.random.uniform(size=(3, 2), low=-10., high=10.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'transpose.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_conv2d(self):
+        """Conv2D"""
         inputs = np.random.uniform(size=(1, 512, 512, 3), low=0., high=16.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'conv2d.tflite'), inputs
 
-    @model_validator
-    def do_conv2d_int8(self):
-        inputs = np.random.uniform(size=(1, 512, 512, 3), low=0, high=16).astype('int8')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'conv2d_int8.tflite'), inputs
-
-    @model_validator
+    @ModelValidator
     def do_maxpool2d(self):
+        """MaxPool2D"""
         inputs = np.random.uniform(size=(1, 32, 32, 1), low=0., high=16.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'maxpool2d.tflite'), inputs
 
-    @model_validator
-    def do_reshape(self):
-        inputs = np.random.uniform(size=(2, 720, 1080), low=-10., high=10.).astype('float32')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'reshape_2X720X1080.tflite'), inputs
-
-    @model_validator
+    @ModelValidator
     def do_pad(self):
+        """Pad"""
         inputs = np.random.uniform(size=(1, 3, 3, 1), low=0., high=5.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'pad.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_densenet(self):
+        """DenseNet E2E model"""
         inputs = np.random.uniform(size=(1, 224, 224, 3), low=0., high=255.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'densenet.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_inception(self):
+        """Inception V3 E2E model"""
         inputs = np.random.uniform(size=(1, 299, 299, 3), low=0., high=255.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'inception_v3.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_mobilenet(self):
+        """Mobilenet V2 E2E model"""
         inputs = np.random.uniform(size=(1, 224, 224, 3), low=0., high=255.).astype('float32')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'mobilenet_v2_1.0_224.tflite'), inputs
+        return os.path.join(os.path.dirname(__file__), 'models/', 'mobilenet_v2.tflite'), inputs
 
-    @model_validator
+    @ModelValidator
     def do_split(self):
+        """Split"""
         inputs = np.random.uniform(size=(1, 720, 4, 3), low=-128., high=127.).astype('float32')
         return os.path.join(os.path.dirname(__file__), 'models/', 'split_fp32.tflite'), inputs
 
-    @model_validator
-    def do_split_int8(self):
-        inputs = np.random.uniform(size=(1, 720, 4, 3), low=-128., high=127.).astype('int8')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'split_int8.tflite'), inputs
-
-    @model_validator
+    @ModelValidator
     def do_mobilebert(self):
+        """MobileBERT E2E model"""
         input1 = np.random.uniform(size=(1, 384), low=0, high=255).astype('int32')
         input2 = np.random.uniform(size=(1, 384), low=0, high=255).astype('int32')
         input3 = np.random.uniform(size=(1, 384), low=0, high=255).astype('int32')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'mobilebert_1_default_1.tflite'), [input1, input2, input3]
-
-    @model_validator
-    def do_unpack_int8(self):
-        inputs = np.random.uniform(size=(3, 4), low=0., high=100.).astype('int8')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'unpack_int8_quant.tflite'), inputs
-
-    @model_validator
-    def do_unpack(self):
-        inputs = np.random.uniform(size=(3, 4), low=0., high=100.).astype('float32')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'unpack.tflite'), inputs
-
-    @model_validator
-    def do_cast(self):
-        inputs = np.random.uniform(size=(2, 3, 4), low=0., high=100.).astype('int8')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'cast_int8_quant.tflite'), inputs
-
-    @model_validator
-    def do_stridedslice(self):
-        inputs = np.random.uniform(size=(3, 2, 3), low=0., high=100.).astype('float32')
-        return os.path.join(os.path.dirname(__file__), 'models/', 'strided_slice.tflite'), inputs
+        file_path = os.path.join(os.path.dirname(__file__), 'models/', 'mobilebert.tflite')
+        inputs = [input1, input2, input3]
+        return file_path, inputs
 
 
 def parse_args():
+    """
+    Returns:
+        argument list
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--model', action='store',
         choices=[
             'all',
-            'stridedslice',
-            'cast',
-            'split',
-            'split_int8',
             'split',
             'pad',
             'mul',
@@ -393,19 +417,17 @@ def parse_args():
             'maxpool2d',
             'reshape',
             'depthwiseconv2d',
-            'conv2d_int8',
             'dense',
             'argmax',
             'relu',
             'relu6',
-            'prelu6',
+            'elu',
+            'prelu',
             'tanh',
             'densenet',
             'inception',
             'mobilenet',
-            'mobilebert',
-            'unpack',
-            'unpack_int8'],
+            'mobilebert'],
         default='all', help="test model"
     )
     parser.add_argument(
@@ -423,12 +445,10 @@ def parse_args():
 
 test_func = {
     'split' : (lambda : TestRecipes().do_split()),
-    'split_int8' : (lambda : TestRecipes().do_split_int8()),
     'pad' : (lambda : TestRecipes().do_pad()),
     'conv2d' : (lambda : TestRecipes().do_conv2d()),
     'mul' : (lambda : TestRecipes().do_mul()),
     'maxpool2d' : (lambda : TestRecipes().do_maxpool2d()),
-    'reshape' : (lambda : TestRecipes().do_reshape()),
     'transpose' : (lambda : TestRecipes().do_transpose()),
     'depthwiseconv2d' : (lambda : TestRecipes().do_depthwiseconv2d()),
     'dense' : (lambda : TestRecipes().do_dense()),
@@ -439,17 +459,20 @@ test_func = {
     'tanh' : (lambda : TestRecipes().do_tanh()),
     'densenet' : (lambda : TestRecipes().do_densenet()),
     'inception' : (lambda : TestRecipes().do_inception()),
-    'mobilenet' : (lambda : TestRecipes().do_mobilenet(metric='TopK', k=5)),
-    'conv2d_int8' : (lambda : TestRecipes().do_conv2d_int8()),
-    'mobilebert' : (lambda : TestRecipes().do_mobilebert(metric='TopK', k=5)),
-    'unpack_int8' : (lambda : TestRecipes().do_unpack_int8()),
-    'unpack' : (lambda : TestRecipes().do_unpack()),
-    'cast' : (lambda : TestRecipes().do_cast()),
-    'stridedslice' : (lambda : TestRecipes().do_stridedslice()),
+    'mobilenet' : (lambda : TestRecipes().do_mobilenet()),
+    'mobilebert' : (lambda : TestRecipes().do_mobilebert()),
 }
 
 
 def main(args):
+    """ Batch test for tflite models
+
+    Args:
+        model (string) optional(default 'all')
+            : valid tflite model, try `python3 ModelValidator.py --help`.
+        target (string) optional(default 'heaan')
+            : benchmarking target, try `python3 ModelValidator.py --help`.
+    """
     model  = args.model
     GLOBAL_SETTING['target'] = args.target
     if model == 'all':

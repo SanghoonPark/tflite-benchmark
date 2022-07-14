@@ -1,2 +1,1 @@
-# TFLITE-BENCHMARK
-----
+# tflite-benchmark
