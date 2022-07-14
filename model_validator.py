@@ -5,6 +5,7 @@ Measuring latency, accuracy, compatibilites of target runtime for given tflite m
 by comparing output tensors inferenced by both; reference(host PC) and target.
 """
 from __future__ import print_function
+from logging import raiseExceptions
 import os
 import subprocess
 import shlex
@@ -77,21 +78,39 @@ def run_tflite_on_heaan(tflite_file, inputs):
 
     Returns:
         outputs : numpy object lists containing data of output tensors.
-    """    
+    """
     with open(tflite_file, 'rb') as f:
         model_buf = f.read()
     inputs = convert_to_list(inputs)
 
-    runtime = tf.lite.Interpreter(model_content=model_buf)
-    input_details = runtime.get_input_details()
-    output_details = runtime.get_output_details()
-
-    # Do something.
-
     outputs = []
-    for _, output_detail in enumerate(output_details):
-        shape = output_detail['shape']
-        outputs.append(np.reshape(runtime.get_tensor(output_detail['index']), shape))
+    # Do something like below.
+#    import pyHeaan.numpy as henp
+#    import pyHeaan.runtime as hert
+#    from pyHeaan.securitySpec import HeaanPresets
+#
+#    or python interface accessing target runtime over RPC/gRPC?
+#
+#    runtime = hert.runtime(
+#                workload = {
+#                    'callable': False,
+#                    'type': 'tflite',
+#                    'binary': model_buf,
+#                },
+#                specification = HeaanPresets('Venti'),
+#                backend_type = None)
+#
+#    with runtime.verified_storage() as vs:
+#        try:
+#            vs.createt('')
+#        except Exception as exc:
+#            raise RuntimeError(f'Failed to create secure storage') from exc
+#        vs.hide()
+#
+#    secure_inputs = runtime.encrypt(henp.asanyarray(inputs))
+#    scrambled_outputs = runtime.execute(input = privacy, )
+#
+#    outputs = henp.toarray(runtime.decrypt(scrambled_outputs))
     return outputs
 
 
